@@ -11,14 +11,15 @@ services:
       # Add OPENAI_API_KEY manually in the Render dashboard
 
   # React Frontend (Static Site)
-  - type: static_site
+  - type: web
     name: agri-rag-frontend
+    env: static
     rootDir: agribasedRag
     buildCommand: npm install && npm run build
     publishPath: dist
     envVars:
       - key: VITE_API_URL
-        # Use Render's internal URL for the backend service
+        # Plain URL value, no Markdown
         value: https://agri-rag-backend.onrender.com/api/chat
     routes:
       - type: rewrite
