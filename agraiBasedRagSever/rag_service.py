@@ -4,6 +4,15 @@ import chromadb
 from chromadb.utils import embedding_functions
 import openai
 from dotenv import load_dotenv
+import sys
+
+# Patch sqlite3 for Vercel/Linux environments where system sqlite3 is too old
+if os.environ.get("VERCEL"):
+    try:
+        __import__('pysqlite3')
+        sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+    except ImportError:
+        pass
 
 load_dotenv()
 
