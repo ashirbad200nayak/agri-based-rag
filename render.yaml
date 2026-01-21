@@ -14,10 +14,11 @@ services:
   - type: web
     name: agri-rag-frontend
     env: static
+    rootDir: agribasedRag
     buildCommand: npm install && npm run build
     publishPath: dist
-    rootDir: agribasedRag
     envVars:
+      # Use the backend service name, not a hard‑coded URL, and no Markdown
       - key: VITE_API_URL
         value: https://agri-rag-backend.onrender.com/api/chat
     routes:
