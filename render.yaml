@@ -11,7 +11,7 @@ services:
       # Add OPENAI_API_KEY manually in the Render dashboard
 
   # React Frontend (Static Site)
-  - type: static_site
+  - type: static
     name: agri-rag-frontend
     buildCommand: npm install && npm run build
     publishPath: dist
