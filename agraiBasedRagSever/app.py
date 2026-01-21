@@ -38,7 +38,7 @@ async def startup_event():
     # note: count() check might need reset if we want to ensure fresh data for this new schema. 
     # Because we are changing the schema (adding metadata), it's best to clear it if it exists or just add to it.
     # For this "shippable v1", assuming a fresh or compatible db is fine, or user can clear `chroma_db` folder.
-    if rag_service.collection.count() == 0:
+    if rag_service.count() == 0:
         print("Indexing seed data...")
         seed_files = glob.glob("seed_data/*.json")
         for file_path in seed_files:

@@ -1,23 +1,11 @@
 import os
-import uuid
-import chromadb
-from chromadb.utils import embedding_functions
+import numpy as np
 import openai
 from dotenv import load_dotenv
-import sys
-
-# Patch sqlite3 for Vercel/Linux environments where system sqlite3 is too old
-if os.environ.get("VERCEL"):
-    try:
-        __import__('pysqlite3')
-        sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
-    except ImportError:
-        pass
 
 load_dotenv()
 
 # Check for OpenAI API key
-# Check for OpenAI API key (Standard or Azure)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
@@ -45,128 +33,119 @@ elif OPENAI_API_KEY:
 else:
     print("WARNING: No OpenAI API keys found. RAG functionality will use fallbacks.")
 
-class CustomAzureEmbeddingFunction:
-    def __init__(self, client, model_name):
-        self.client = client
-        self.model_name = model_name
-
-    def _generate_embeddings(self, input):
-        # Ensure input is a list
-        if isinstance(input, str):
-            input = [input]
-        
-        # Call the embedding API
-        response = self.client.embeddings.create(
-            input=input,
-            model=self.model_name
-        )
-        
-        # Extract embeddings
-        return [data.embedding for data in response.data]
-
-    def __call__(self, input):
-        return self._generate_embeddings(input)
-
-    def embed_documents(self, input):
-        return self._generate_embeddings(input)
-
-    def embed_query(self, input):
-        return self._generate_embeddings(input)
-
-    def name(self):
-        return "custom_azure_embedding_function"
-
 class RagService:
-    def __init__(self, persistence_path="./chroma_db"):
-        # On Vercel, we must use /tmp for any write operations
-        if os.environ.get("VERCEL"):
-            persistence_path = "/tmp/chroma_db"
-            
-        self.client = chromadb.PersistentClient(path=persistence_path)
+    def __init__(self):
+        # In-memory storage: list of dictionaries
+        # Each item: { "id": str, "text": str, "metadata": dict, "vector": np.array }
+        self.documents = []
         
-        # Configure Embeddings
-        if AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT and openai_client:
-            self.embedding_fn = CustomAzureEmbeddingFunction(
-                client=openai_client,
-                model_name=AZURE_EMBEDDING_DEPLOYMENT
-            )
-        elif OPENAI_API_KEY:
-            self.embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-                api_key=OPENAI_API_KEY,
-                model_name="text-embedding-ada-002"
-            )
-        else:
-            # Fallback to default equivalent (DefaultEmbeddingFunction uses ONNX MiniLM)
-            self.embedding_fn = embedding_functions.DefaultEmbeddingFunction()
+    def count(self):
+        """Returns the number of documents in the store."""
+        return len(self.documents)
 
-        self.collection = self.client.get_or_create_collection(
-            name="agri_knowledge_base",
-            embedding_function=self.embedding_fn
-        )
+    def _get_embedding(self, text):
+        if not openai_client:
+            return np.zeros(1536) # Dummy vector if no API key
+            
+        try:
+            # Helper to get embedding
+            # Note: For Azure or Standard, client usage is similar.
+            response = openai_client.embeddings.create(
+                input=text,
+                model=AZURE_EMBEDDING_DEPLOYMENT if AZURE_OPENAI_API_KEY else "text-embedding-ada-002" 
+            )
+            return np.array(response.data[0].embedding)
+        except Exception as e:
+            print(f"Error getting embedding: {e}")
+            return np.zeros(1536)
 
     def index_text(self, text: str, doc_id: str, metadata: dict) -> str:
         """
-        Indexes a piece of text into the vector DB with metadata.
+        Indexes a piece of text into the in-memory store.
         """
-        self.collection.add(
-            documents=[text],
-            metadatas=[metadata],
-            ids=[doc_id]
-        )
+        vector = self._get_embedding(text)
+        self.documents.append({
+            "id": doc_id,
+            "text": text,
+            "metadata": metadata,
+            "vector": vector
+        })
         return doc_id
 
     def search(self, query_text: str, n_results: int = 5, filters: dict = None):
         """
-        Searches for the most relevant documents.
-        Returns detailed matches including evidence snippets.
+        Searches for the most relevant documents using cosine similarity.
         """
-        results = self.collection.query(
-            query_texts=[query_text],
-            n_results=n_results,
-            where=filters if filters else None
-        )
+        if not self.documents:
+            return []
+
+        query_vector = self._get_embedding(query_text)
         
+        # Simple brute-force cosine similarity
+        results = []
+        for doc in self.documents:
+            # Check filters
+            if filters:
+                match = True
+                for k, v in filters.items():
+                    if doc["metadata"].get(k) != v:
+                        match = False
+                        break
+                if not match:
+                    continue
+
+            # Cosine similarity: (A . B) / (||A|| * ||B||)
+            # OpenAI embeddings are usually normalized, so just dot product is enough.
+            # But let's be safe.
+            doc_vector = doc["vector"]
+            score = np.dot(query_vector, doc_vector) / (np.linalg.norm(query_vector) * np.linalg.norm(doc_vector) + 1e-9)
+            
+            # Use same score 0-100 scale as previous impl
+            display_score = max(0, score * 100) 
+            
+            results.append({
+                "doc_id": doc["id"],
+                "text": doc["text"],
+                "metadata": doc["metadata"],
+                "score_0_100": round(display_score, 0),
+                "raw_score": score
+            })
+
+        # Sort by score descending
+        results.sort(key=lambda x: x["raw_score"], reverse=True)
+        top_results = results[:n_results]
+
         matches = []
-        if results['ids']:
-            ids = results['ids'][0]
-            docs = results['documents'][0]
-            metadatas = results['metadatas'][0]
-            distances = results['distances'][0] if results['distances'] else [0]*len(ids)
-
-            for i in range(len(ids)):
-                # Score conversion (approximate for cosine distance)
-                # Chroma cosine distance is typically 0 to 2.
-                # Just using a simple mapping: 1 - distance (clamped to 0) * 100 
-                # This is just for UI display not scientific precision here.
-                score = max(0, 100 - (distances[i] * 100))
-                
-                # Evidence snippet: simple prefix or use text
-                # Ideally, we would find the exact matching span, but for v1 we take the first 300 chars.
-                evidence_snippet = docs[i][:300] + "..." if len(docs[i]) > 300 else docs[i]
-
-                matches.append({
-                    "doc_id": ids[i],
-                    "title": metadatas[i].get("title", "Unknown Title"),
-                    "score_0_100": round(score, 0),
-                    "evidence_snippet": evidence_snippet
-                })
-        
+        for res in top_results:
+            text = res["text"]
+            evidence_snippet = text[:300] + "..." if len(text) > 300 else text
+            
+            matches.append({
+                "doc_id": res["doc_id"],
+                "title": res["metadata"].get("title", "Unknown Title"),
+                "score_0_100": res["score_0_100"],
+                "evidence_snippet": evidence_snippet
+            })
+            
         return matches
 
     def generate_recommendation(self, note_text: str, doc_id: str):
         """
         Generates a recommendation based on the note and a specific document.
         """
-        # Fetch the doc content
-        result = self.collection.get(ids=[doc_id])
-        if not result['documents']:
+        # Find doc in memory
+        doc_text = None
+        for doc in self.documents:
+            if doc["id"] == doc_id:
+                doc_text = doc["text"]
+                break
+                
+        if not doc_text:
             return {
                 "bullets": ["Error: Document not found."],
                 "citations": [],
                 "fallback_used": True
             }
-        
-        doc_text = result['documents'][0]
         
         if not openai_client:
              return {
@@ -232,7 +211,6 @@ class RagService:
                 "citations": [],
                 "fallback_used": True
             }
-
 
 # Singleton instance for easy import
 rag_service = RagService()
