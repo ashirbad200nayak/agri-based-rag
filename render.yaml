@@ -8,18 +8,16 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
-      # Add OPENAI_API_KEY manually in the Render dashboard
+      # Add OPENAI_API_KEY manually in the dashboard
 
+staticSites:
   # React Frontend (Static Site)
-  - type: web
-    name: agri-rag-frontend
-    env: static
-    rootDir: agribasedRag
+  - name: agri-rag-frontend
+    root: agribasedRag
     buildCommand: npm install && npm run build
     publishPath: dist
     envVars:
       - key: VITE_API_URL
-        # Plain URL value, no Markdown
         value: https://agri-rag-backend.onrender.com/api/chat
     routes:
       - type: rewrite
