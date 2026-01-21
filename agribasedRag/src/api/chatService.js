@@ -1,6 +1,6 @@
-const API_URL = import.meta.env.PROD 
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD 
   ? "/api/chat" 
-  : "http://localhost:8000/api/chat";
+  : "http://localhost:8000/api/chat");
 
 export const sendMessage = async (message, region = null) => {
   try {

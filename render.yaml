@@ -1,0 +1,26 @@
+services:
+  # Python Backend Service
+  - type: web
+    name: agri-rag-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn agraiBasedRagSever.app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.0
+      # You will need to add OPENAI_API_KEY manually in the dashboard
+
+  # React Frontend (Static Site)
+  - type: static
+    name: agri-rag-frontend
+    env: node
+    root: agribasedRag
+    buildCommand: npm install && npm run build
+    publishDir: dist
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://agri-rag-backend.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
