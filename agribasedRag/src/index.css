@@ -1,0 +1,46 @@
+:root {
+  --bg-color: #343541;
+  --sidebar-bg: #202123;
+  --chat-sent-bg: #343541; /* User message usually transparent or distinct */
+  --chat-received-bg: #444654; /* AI message background */
+  --text-primary: #ececf1;
+  --text-secondary: #c5c5d2;
+  --input-bg: #40414f;
+  --border-color: #565869;
+  --primary-btn: #10a37f;
+  --primary-btn-hover: #1a7f64;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+  display: flex;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #565869;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #acacbe;
+}
